@@ -1,8 +1,8 @@
 import json
-from datetime import date, timedelta
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 import requests
+
 from waste_collection_schedule import Collection  # type: ignore[attr-defined]
 
 TITLE = "London Borough of Hounslow"
@@ -28,6 +28,7 @@ API_URL = f"{BASE_URL}/apibroker/runLookup"
 
 TOKEN_LOOKUP_ID = "655f4290810cf"
 JOBS_LOOKUP_ID = "659eb39b66d5a"
+TIMEOUT = 30
 
 
 class Source:
@@ -36,14 +37,14 @@ class Source:
 
     def _init_session(self) -> str:
         self._session = requests.Session()
-        r = self._session.get(INITIAL_URL)
+        r = self._session.get(INITIAL_URL, timeout=TIMEOUT)
         r.raise_for_status()
         params = {
             "uri": r.url,
             "hostname": "my.hounslow.gov.uk",
             "withCredentials": "true",
         }
-        r = self._session.get(AUTH_URL, params=params)
+        r = self._session.get(AUTH_URL, params=params, timeout=TIMEOUT)
         r.raise_for_status()
         session_key = r.json()["auth-session"]
 
@@ -51,7 +52,7 @@ class Source:
             "sid": session_key,
             "_": int(datetime.now().timestamp() * 1000),
         }
-        r = self._session.get(AUTH_TEST, params=params)
+        r = self._session.get(AUTH_TEST, params=params, timeout=TIMEOUT)
         r.raise_for_status()
         return session_key
 
@@ -70,6 +71,7 @@ class Source:
             API_URL,
             params=params,
             json={"formValues": {"Section 1": form_values}},
+            timeout=TIMEOUT,
         )
         r.raise_for_status()
         return r.json()
@@ -83,7 +85,11 @@ class Source:
             TOKEN_LOOKUP_ID,
             {"searchUPRN": {"value": self._uprn}},
         )
-        rows = token_resp.get("integration", {}).get("transformed", {}).get("rows_data", {})
+        rows = (
+            token_resp.get("integration", {})
+            .get("transformed", {})
+            .get("rows_data", {})
+        )
         if not rows:
             raise ValueError(f"Failed to get Bartec token for UPRN {self._uprn}")
         bartec_token = rows["0"]["bartecToken"]
@@ -102,7 +108,9 @@ class Source:
             },
         )
 
-        jobs_rows = jobs_resp.get("integration", {}).get("transformed", {}).get("rows_data", {})
+        jobs_rows = (
+            jobs_resp.get("integration", {}).get("transformed", {}).get("rows_data", {})
+        )
         if not jobs_rows:
             raise ValueError(f"No collection data found for UPRN {self._uprn}")
 
